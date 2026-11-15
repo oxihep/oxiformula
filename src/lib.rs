@@ -3,11 +3,11 @@
 //! numerical integration and differentiation.
 //!
 //! Dependency-free leaf crate. It powers oxiroot's `Func1D`/`Func2D`/`Func3D` function
-//! objects (evaluation, `Integral`, `Derivative`) and `oxiroot_fit`'s
+//! objects (evaluation, `Integral`, `Derivative`) and `oxifit`'s
 //! `Model::from_formula`, so any ROOT formula can be evaluated and fitted.
 //!
 //! ```
-//! use oxiroot_formula::Formula;
+//! use oxifit_formula::Formula;
 //! // parameters are [0], [1], …; variables are x (and y, z for 2-/3-D).
 //! let f = Formula::parse("[0]*sin([1]*x) + [2]").unwrap();
 //! assert_eq!(f.npar(), 3);
