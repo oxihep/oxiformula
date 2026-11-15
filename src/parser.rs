@@ -13,10 +13,22 @@ pub(crate) struct Parsed {
     pub(crate) ndim: usize,
 }
 
+/// The deepest nesting of parentheses, operators and function calls a formula
+/// may have. Formulas can come from files, so parsing (and later evaluating
+/// and dropping the expression tree, which recurse over it) must not be able to
+/// exhaust the stack.
+pub(crate) const MAX_DEPTH: usize = 200;
+
+/// The largest parameter index a formula may use (`[i]`, a shortcut's offset
+/// plus its parameters, or `polN`'s degree). It bounds the parameter vector a
+/// formula from a file can make the reader allocate.
+pub(crate) const MAX_PARAMS: usize = 10_000;
+
 pub(crate) fn parse(tokens: Vec<Token>) -> Result<Parsed, ParseError> {
     let mut p = Parser {
         toks: tokens,
         pos: 0,
+        depth: 0,
         max_par: -1,
         named: Vec::new(),
         max_var: 0,
@@ -34,6 +46,8 @@ pub(crate) fn parse(tokens: Vec<Token>) -> Result<Parsed, ParseError> {
 struct Parser {
     toks: Vec<Token>,
     pos: usize,
+    /// Current `expr_bp` nesting, checked against [`MAX_DEPTH`].
+    depth: usize,
     max_par: i64,
     named: Vec<String>,
     max_var: usize,
@@ -78,8 +92,19 @@ impl Parser {
         }
     }
 
-    /// Precedence-climbing over the binary operators.
+    /// Precedence-climbing over the binary operators. Every recursive path of
+    /// the parser goes through here, so this is where nesting is limited.
     fn expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
+        if self.depth >= MAX_DEPTH {
+            return Err(ParseError::new("formula is nested too deeply", self.pos));
+        }
+        self.depth += 1;
+        let result = self.expr_bp_inner(min_bp);
+        self.depth -= 1;
+        result
+    }
+
+    fn expr_bp_inner(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
         let mut lhs = self.prefix()?;
         while let Some((op, l_bp, r_bp)) = self.peek().and_then(binop) {
             if l_bp < min_bp {
@@ -111,6 +136,12 @@ impl Parser {
         match self.bump() {
             Some(Token::Num(v)) => Ok(Expr::Num(v)),
             Some(Token::Par(n)) => {
+                if n >= MAX_PARAMS {
+                    return Err(ParseError::new(
+                        "parameter index is too large",
+                        self.pos - 1,
+                    ));
+                }
                 self.max_par = self.max_par.max(n as i64);
                 Ok(Expr::Par(n))
             }
@@ -184,6 +215,10 @@ impl Parser {
             .strip_prefix("pol")
             .and_then(|d| d.parse::<usize>().ok())
         {
+            // Horner's rule nests `polN` about 2N levels deep.
+            if deg > MAX_DEPTH / 2 {
+                return Err(ParseError::new("polynomial degree is too large", self.pos));
+            }
             Shortcut::Pol(deg)
         } else {
             return Ok(None);
@@ -192,7 +227,9 @@ impl Parser {
         let offset = if self.peek() == Some(&Token::LParen) {
             self.pos += 1;
             let off = match self.bump() {
-                Some(Token::Num(v)) if v >= 0.0 && v.fract() == 0.0 => v as usize,
+                Some(Token::Num(v)) if v >= 0.0 && v.fract() == 0.0 && v < MAX_PARAMS as f64 => {
+                    v as usize
+                }
                 _ => {
                     return Err(ParseError::new(
                         "shortcut offset must be a non-negative integer",
@@ -205,6 +242,14 @@ impl Parser {
         } else {
             0
         };
+        let count_needed = match kind {
+            Shortcut::Gaus => 3,
+            Shortcut::Expo => 2,
+            Shortcut::Pol(deg) => deg + 1,
+        };
+        if offset + count_needed > MAX_PARAMS {
+            return Err(ParseError::new("parameter index is too large", self.pos));
+        }
         self.any_var = true;
         let x = || Expr::Var(0);
         let par = |k: usize| Expr::Par(k);

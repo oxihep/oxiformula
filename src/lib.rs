@@ -278,3 +278,37 @@ mod tests {
         assert!(Formula::parse("[]").is_err());
     }
 }
+
+#[cfg(test)]
+mod limit_tests {
+    use crate::Formula;
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_stack_overflow() {
+        let deep = format!("{}x{}", "(".repeat(100_000), ")".repeat(100_000));
+        assert!(Formula::parse(&deep).is_err());
+        let unary = format!("{}x", "-".repeat(100_000));
+        assert!(Formula::parse(&unary).is_err());
+        let calls = format!("{}x{}", "sin(".repeat(100_000), ")".repeat(100_000));
+        assert!(Formula::parse(&calls).is_err());
+        // Moderate nesting still parses and evaluates.
+        let ok = format!("{}x{}", "(".repeat(150), ")".repeat(150));
+        assert!(Formula::parse(&ok).is_ok());
+    }
+
+    #[test]
+    fn huge_parameter_indices_are_errors_not_allocations_or_overflows() {
+        for f in [
+            "[1000000000000]*x",
+            "[18446744073709551615]",
+            "gaus(1e300)",
+            "pol3(18446744073709551615)",
+            "pol100000",
+            "expo(9999)",
+        ] {
+            assert!(Formula::parse(f).is_err(), "{f} should be rejected");
+        }
+        assert!(Formula::parse("pol20").is_ok());
+        assert!(Formula::parse("[9999]*x").is_ok());
+    }
+}
