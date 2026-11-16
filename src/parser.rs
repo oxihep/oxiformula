@@ -1,9 +1,9 @@
 //! A precedence-climbing (Pratt) parser turning a token stream into an [`Expr`],
 //! including ROOT's `gaus`/`expo`/`polN` shortcut expansion.
 
+use crate::ParseError;
 use crate::expr::{BinOp, Expr, Func};
 use crate::lexer::Token;
-use crate::ParseError;
 
 /// Parse result: the AST plus the parameter count and dimensionality inferred
 /// from the highest `[i]` and the highest variable (`x`/`y`/`z`) used.
@@ -234,7 +234,7 @@ impl Parser {
                     return Err(ParseError::new(
                         "shortcut offset must be a non-negative integer",
                         self.pos,
-                    ))
+                    ));
                 }
             };
             self.eat(&Token::RParen)?;

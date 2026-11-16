@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(f.root_formula(), "[p0]*sin([p1]*x)+[p2]");
         let p = [2.0, 1.5, 0.5];
         assert!((f.eval1(1.0, &p) - 2.494_990).abs() < 1e-6); // ROOT Eval(1)
-                                                              // ROOT Integral(0, pi) = 2.904130 ; Derivative(1) = 0.212212
+        // ROOT Integral(0, pi) = 2.904130 ; Derivative(1) = 0.212212
         assert!(
             (integrate(|x| f.eval1(x, &p), 0.0, std::f64::consts::PI) - 2.904_130).abs() < 1e-5
         );
