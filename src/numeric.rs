@@ -121,6 +121,65 @@ fn qk15<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64) -> (f64, f64) {
     (result, abserr)
 }
 
+/// Definite integral of `f` over `[a, b]` with an error estimate — globally
+/// adaptive Gauss–Kronrod (QUADPACK's `qag` strategy with the 15-point rule).
+/// It starts from 16 equal intervals (fewer if `max_intervals` is smaller),
+/// then bisects the interval with the largest error until the summed error is
+/// within `rel_tol` of the result or `max_intervals` intervals are in use, so
+/// its cost is bounded (at most `15·(2·max_intervals − 1)` evaluations) even
+/// for a spike or a non-smooth integrand. Like any quadrature, it can miss a
+/// feature much narrower than the starting intervals' node spacing (about
+/// `(b − a)/240`). Returns `(integral, abserr)`; reversed limits negate it.
+#[must_use]
+pub fn integrate_adaptive<F: Fn(f64) -> f64>(
+    f: F,
+    a: f64,
+    b: f64,
+    rel_tol: f64,
+    max_intervals: usize,
+) -> (f64, f64) {
+    if a == b {
+        return (0.0, 0.0);
+    }
+    if b < a {
+        let (r, e) = integrate_adaptive(f, b, a, rel_tol, max_intervals);
+        return (-r, e);
+    }
+    let n0 = max_intervals.clamp(1, 16);
+    let width = (b - a) / n0 as f64;
+    let mut parts: Vec<(f64, f64, f64, f64)> = (0..n0)
+        .map(|k| {
+            let lo = a + width * k as f64;
+            let hi = if k + 1 == n0 { b } else { lo + width };
+            let (r, e) = qk15(&f, lo, hi);
+            (lo, hi, r, e)
+        })
+        .collect();
+    let mut total: f64 = parts.iter().map(|p| p.2).sum();
+    let mut err: f64 = parts.iter().map(|p| p.3).sum();
+    while err > rel_tol * total.abs() && parts.len() < max_intervals.max(1) {
+        let worst = (0..parts.len())
+            .max_by(|&i, &j| parts[i].3.total_cmp(&parts[j].3))
+            .unwrap_or(0);
+        let (lo, hi, r, e) = parts.swap_remove(worst);
+        let mid = 0.5 * (lo + hi);
+        if mid <= lo || mid >= hi {
+            parts.push((lo, hi, r, e)); // cannot split further
+            break;
+        }
+        let (r1, e1) = qk15(&f, lo, mid);
+        let (r2, e2) = qk15(&f, mid, hi);
+        total += r1 + r2 - r;
+        err += e1 + e2 - e;
+        parts.push((lo, mid, r1, e1));
+        parts.push((mid, hi, r2, e2));
+    }
+    // Re-sum to shed the running sums' rounding.
+    let total = parts.iter().map(|p| p.2).sum();
+    let err = parts.iter().map(|p| p.3).sum();
+    (total, err)
+}
+
 /// Derivative of `f` at `x` — a two-level Richardson-extrapolated central
 /// difference (`O(h⁴)`), matching ROOT's `Func1D::Derivative` accuracy. `h` scales
 /// with `|x|` so the step stays meaningful across magnitudes.

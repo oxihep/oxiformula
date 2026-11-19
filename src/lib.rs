@@ -29,7 +29,7 @@ mod lexer;
 mod numeric;
 mod parser;
 
-pub use numeric::{derivative, integrate};
+pub use numeric::{derivative, integrate, integrate_adaptive};
 
 use expr::Expr;
 
@@ -190,6 +190,35 @@ impl std::error::Error for ParseError {}
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn integrate_adaptive_is_bounded_and_finds_a_spike() {
+        use std::cell::Cell;
+        // A normalized Gaussian of width `s` at an off-centre spot of [-50, 50].
+        let calls = Cell::new(0_usize);
+        let peak = |s: f64| {
+            let calls = &calls;
+            move |x: f64| {
+                calls.set(calls.get() + 1);
+                (-0.5 * ((x - 3.7) / s).powi(2)).exp() / (s * std::f64::consts::TAU.sqrt())
+            }
+        };
+        // Narrow next to the range (a single rule over it would miss it).
+        let (r, e) = crate::integrate_adaptive(peak(0.3), -50.0, 50.0, 1e-10, 500);
+        assert!((r - 1.0).abs() < 1e-8, "{r} ± {e}");
+        assert!(calls.get() <= 15 * (2 * 500 - 1), "{} calls", calls.get());
+        // An extreme spike, and a cap far too small: still bounded, finite.
+        for (s, cap) in [(1e-6, 500), (0.3, 4)] {
+            calls.set(0);
+            let (r, e) = crate::integrate_adaptive(peak(s), -50.0, 50.0, 1e-10, cap);
+            assert!(calls.get() <= 15 * (2 * cap - 1), "{} calls", calls.get());
+            assert!(r.is_finite() && e.is_finite());
+        }
+        // Reversed limits negate.
+        let (a, _) = crate::integrate_adaptive(|x| x * x, 0.0, 3.0, 1e-12, 50);
+        let (b, _) = crate::integrate_adaptive(|x| x * x, 3.0, 0.0, 1e-12, 50);
+        assert!((a - 9.0).abs() < 1e-12 && (a + b).abs() < 1e-15);
+    }
+
     use super::*;
 
     const EPS: f64 = 1e-9;
