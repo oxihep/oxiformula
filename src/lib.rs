@@ -191,6 +191,48 @@ impl std::error::Error for ParseError {}
 #[cfg(test)]
 mod tests {
     #[test]
+    fn integrate_stays_bounded_on_nan_and_noise() {
+        use std::cell::Cell;
+        let calls = Cell::new(0_u64);
+        // NaN on part of the range: the error estimate is NaN there, which
+        // once made the depth-first bisection run 40 levels deep (2⁴⁰ rules).
+        let r = crate::integrate(
+            |x| {
+                calls.set(calls.get() + 1);
+                if x > 0.3 { f64::NAN } else { 1.0 }
+            },
+            -1.0,
+            1.0,
+        );
+        assert!(
+            r.is_nan() && calls.get() < 1000,
+            "{r} after {} calls",
+            calls.get()
+        );
+        // A noisy integrand never meets the tolerance: capped at 2000 intervals.
+        calls.set(0);
+        let r = crate::integrate(
+            |x: f64| {
+                calls.set(calls.get() + 1);
+                (x.to_bits().wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 11) as f64 / (1u64 << 53) as f64
+            },
+            0.0,
+            1.0,
+        );
+        assert!(
+            (0.0..=1.0).contains(&r) && calls.get() <= 15 * (2 * 2000 - 1),
+            "{} calls",
+            calls.get()
+        );
+        // A narrow Gaussian — which hung the old depth-first bisection (its
+        // halved tolerance fell below the rule's error floor) — to 1e-10.
+        let s = 0.01;
+        let g =
+            |x: f64| (-0.5 * ((x - 0.37) / s).powi(2)).exp() / (s * std::f64::consts::TAU.sqrt());
+        assert!((crate::integrate(g, -1.0, 1.0) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn integrate_adaptive_is_bounded_and_finds_a_spike() {
         use std::cell::Cell;
         // A normalized Gaussian of width `s` at an off-centre spot of [-50, 50].

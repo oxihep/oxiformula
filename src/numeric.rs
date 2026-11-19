@@ -2,31 +2,25 @@
 //! behind `Func1D::Integral` and `Func1D::Derivative`. Both take any `Fn(f64) -> f64`,
 //! so they work on a parsed formula or any closure.
 
-/// Definite integral of `f` over `[a, b]` — adaptive Gauss–Kronrod (the 15-point
-/// rule with its embedded 7-point Gauss estimate for the error), recursively
-/// bisecting the interval of largest error. Matches ROOT's `Func1D::Integral`
-/// (default `ROOT::Math::GaussIntegrator`) to ~10 significant figures for smooth
+/// The most intervals one [`integrate`] call uses: far more than a smooth
+/// integrand needs, and a bound (about 60 000 evaluations) on the rest.
+const MAX_INTERVALS: usize = 2000;
+
+/// Definite integral of `f` over `[a, b]` — globally adaptive Gauss–Kronrod
+/// (the 15-point rule with its embedded 7-point Gauss estimate for the error):
+/// starting from 16 equal intervals, the interval with the largest error is
+/// bisected until the total error is within `1e-11` of the result (or below
+/// `1e-13`). Matches ROOT's `Func1D::Integral` (default
+/// `ROOT::Math::GaussIntegrator`) to ~10 significant figures for smooth
 /// integrands. Reversed limits negate the result.
+///
+/// The work is bounded — at most 2000 intervals (about 60 000 evaluations),
+/// however narrow a peak or noisy the integrand — and an integrand that is
+/// `NaN` or infinite somewhere gives a `NaN` or infinite result at once. For
+/// the error estimate, or other tolerances, use [`integrate_adaptive`].
 #[must_use]
 pub fn integrate<F: Fn(f64) -> f64>(f: F, a: f64, b: f64) -> f64 {
-    if a == b {
-        return 0.0;
-    }
-    if b < a {
-        return -integrate(f, b, a);
-    }
-    let (r0, _) = qk15(&f, a, b);
-    let tol = (1e-11 * r0.abs()).max(1e-13);
-    adaptive(&f, a, b, tol, 40)
-}
-
-fn adaptive<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, depth: u32) -> f64 {
-    let (r, e) = qk15(f, a, b);
-    if e <= tol || depth == 0 {
-        return r;
-    }
-    let m = 0.5 * (a + b);
-    adaptive(f, a, m, tol * 0.5, depth - 1) + adaptive(f, m, b, tol * 0.5, depth - 1)
+    adaptive(&f, a, b, 1e-11, 1e-13, MAX_INTERVALS).0
 }
 
 /// The Gauss–Kronrod 15-point rule on `[a, b]`, returning `(integral, abserr)`.
@@ -138,11 +132,25 @@ pub fn integrate_adaptive<F: Fn(f64) -> f64>(
     rel_tol: f64,
     max_intervals: usize,
 ) -> (f64, f64) {
+    adaptive(&f, a, b, rel_tol, 0.0, max_intervals)
+}
+
+/// The globally adaptive core: bisect the worst interval until the summed
+/// error is within `max(rel_tol·|integral|, abs_tol)` or `max_intervals` are in
+/// use. A non-finite estimate ends it (NaN compares false, so the loop stops).
+fn adaptive<F: Fn(f64) -> f64>(
+    f: &F,
+    a: f64,
+    b: f64,
+    rel_tol: f64,
+    abs_tol: f64,
+    max_intervals: usize,
+) -> (f64, f64) {
     if a == b {
         return (0.0, 0.0);
     }
     if b < a {
-        let (r, e) = integrate_adaptive(f, b, a, rel_tol, max_intervals);
+        let (r, e) = adaptive(f, b, a, rel_tol, abs_tol, max_intervals);
         return (-r, e);
     }
     let n0 = max_intervals.clamp(1, 16);
@@ -151,13 +159,13 @@ pub fn integrate_adaptive<F: Fn(f64) -> f64>(
         .map(|k| {
             let lo = a + width * k as f64;
             let hi = if k + 1 == n0 { b } else { lo + width };
-            let (r, e) = qk15(&f, lo, hi);
+            let (r, e) = qk15(f, lo, hi);
             (lo, hi, r, e)
         })
         .collect();
     let mut total: f64 = parts.iter().map(|p| p.2).sum();
     let mut err: f64 = parts.iter().map(|p| p.3).sum();
-    while err > rel_tol * total.abs() && parts.len() < max_intervals.max(1) {
+    while err > (rel_tol * total.abs()).max(abs_tol) && parts.len() < max_intervals.max(1) {
         let worst = (0..parts.len())
             .max_by(|&i, &j| parts[i].3.total_cmp(&parts[j].3))
             .unwrap_or(0);
@@ -167,8 +175,8 @@ pub fn integrate_adaptive<F: Fn(f64) -> f64>(
             parts.push((lo, hi, r, e)); // cannot split further
             break;
         }
-        let (r1, e1) = qk15(&f, lo, mid);
-        let (r2, e2) = qk15(&f, mid, hi);
+        let (r1, e1) = qk15(f, lo, mid);
+        let (r2, e2) = qk15(f, mid, hi);
         total += r1 + r2 - r;
         err += e1 + e2 - e;
         parts.push((lo, mid, r1, e1));
