@@ -19,7 +19,8 @@
 //! Supported syntax: the operators `+ - * / ^` (and `**`) with the usual
 //! precedence, comparisons/`&&`/`||` and a `?:` ternary (each comparison yields
 //! `1.0`/`0.0`), the constants `pi`/`e`, the functions `sin cos tan asin acos
-//! atan atan2 sinh cosh tanh exp log log10 log2 sqrt abs pow min max …` (with or
+//! atan atan2 sinh cosh tanh exp log log10 log2 sqrt abs pow min max erf erfc
+//! lgamma …` (with or
 //! without a `TMath::` prefix), and ROOT's shortcuts `gaus`/`gaus(n)`,
 //! `expo`/`expo(n)`, and `pol0`…`polN` (which expand to parameterised templates).
 
@@ -225,6 +226,21 @@ mod tests {
             3.0
         );
         assert!((Formula::parse("pi").unwrap().eval1(0.0, &[]) - std::f64::consts::PI).abs() < EPS);
+    }
+
+    #[test]
+    fn special_functions() {
+        // TMath::Erf(1) = 0.8427007929497149, TMath::Erfc(1) = 0.15729920705028513,
+        // TMath::LnGamma(5) = ln 24.
+        let f = Formula::parse("TMath::Erf(x)").unwrap();
+        assert!((f.eval1(1.0, &[]) - 0.842_700_792_949_714_9).abs() < 1e-12);
+        let g = Formula::parse("erfc(x)").unwrap();
+        assert!((g.eval1(1.0, &[]) - 0.157_299_207_050_285_13).abs() < 1e-12);
+        let l = Formula::parse("TMath::LnGamma(x)").unwrap();
+        assert!((l.eval1(5.0, &[]) - 24f64.ln()).abs() < 1e-12);
+        // A trigger turn-on: [0]/2·(1 + erf((x − [1])/([2]·√2))) is [0]/2 at x = [1].
+        let t = Formula::parse("[0]/2*(1+erf((x-[1])/([2]*sqrt(2))))").unwrap();
+        assert!((t.eval1(10.0, &[1.0, 10.0, 2.0]) - 0.5).abs() < 1e-12);
     }
 
     #[test]
