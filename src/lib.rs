@@ -70,6 +70,34 @@ impl Formula {
         })
     }
 
+    /// The formula's derivative with respect to parameter `k`, symbolically
+    /// (`None` if the formula uses a function without a closed-form
+    /// derivative here, `lgamma`). Exact where a finite difference is not,
+    /// and as cheap as the formula.
+    ///
+    /// ```
+    /// # use oxifit_formula::Formula;
+    /// let f = Formula::parse("[0]*exp(-0.5*((x-[1])/[2])^2)")?;
+    /// let d = f.derivative(1).unwrap(); // ∂/∂mean
+    /// let (x, p) = (1.3, [2.0, 1.0, 0.5]);
+    /// let u: f64 = (x - p[1]) / p[2];
+    /// let exact = p[0] * (-0.5 * u * u).exp() * u / p[2];
+    /// assert!((d.eval1(x, &p) - exact).abs() < 1e-12);
+    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// ```
+    #[must_use]
+    pub fn derivative(&self, k: usize) -> Option<Formula> {
+        let expr = self.expr.diff(k)?;
+        Some(Formula {
+            expr,
+            npar: self.npar,
+            ndim: self.ndim,
+            source: format!("d({})/d[{k}]", self.source),
+            root_formula: format!("d({})/d[{k}]", self.root_formula),
+            param_names: self.param_names.clone(),
+        })
+    }
+
     /// Evaluate the formula. `vars` supplies `x` (`[x]`), `x,y` (`[x, y]`), or
     /// `x,y,z`; `params` supplies `[0], [1], …`. Missing entries read as `0`.
     #[must_use]
