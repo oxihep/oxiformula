@@ -38,7 +38,9 @@ pub(crate) fn parse(tokens: Vec<Token>) -> Result<Parsed, ParseError> {
     if p.pos != p.toks.len() {
         return Err(ParseError::new("trailing tokens after expression", p.pos));
     }
-    let npar = (p.max_par + 1).max(p.named.len() as i64) as usize;
+    let npar = usize::try_from(p.max_par + 1)
+        .unwrap_or(0)
+        .max(p.named.len());
     let ndim = if p.any_var { p.max_var + 1 } else { 1 };
     Ok(Parsed { expr, npar, ndim })
 }
@@ -142,7 +144,7 @@ impl Parser {
                         self.pos - 1,
                     ));
                 }
-                self.max_par = self.max_par.max(n as i64);
+                self.max_par = self.max_par.max(i64::try_from(n).unwrap_or(i64::MAX));
                 Ok(Expr::Par(n))
             }
             Some(Token::ParName(name)) => {
@@ -228,7 +230,13 @@ impl Parser {
             self.pos += 1;
             let off = match self.bump() {
                 Some(Token::Num(v)) if v >= 0.0 && v.fract() == 0.0 && v < MAX_PARAMS as f64 => {
-                    v as usize
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "a whole number in 0..MAX_PARAMS"
+                    )]
+                    let off = v as usize;
+                    off
                 }
                 _ => {
                     return Err(ParseError::new(
@@ -306,7 +314,9 @@ impl Parser {
                 acc
             }
         };
-        self.max_par = self.max_par.max((offset + count - 1) as i64);
+        self.max_par = self
+            .max_par
+            .max(i64::try_from(offset + count - 1).unwrap_or(i64::MAX));
         Ok(Some(expr))
     }
 }

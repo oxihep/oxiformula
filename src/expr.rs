@@ -139,14 +139,14 @@ impl Expr {
                     BinOp::Mul => l * r,
                     BinOp::Div => l / r,
                     BinOp::Pow => l.powf(r),
-                    BinOp::Lt => (l < r) as u8 as f64,
-                    BinOp::Gt => (l > r) as u8 as f64,
-                    BinOp::Le => (l <= r) as u8 as f64,
-                    BinOp::Ge => (l >= r) as u8 as f64,
-                    BinOp::Eq => (l == r) as u8 as f64,
-                    BinOp::Ne => (l != r) as u8 as f64,
-                    BinOp::And => (truthy(l) && truthy(r)) as u8 as f64,
-                    BinOp::Or => (truthy(l) || truthy(r)) as u8 as f64,
+                    BinOp::Lt => f64::from(u8::from(l < r)),
+                    BinOp::Gt => f64::from(u8::from(l > r)),
+                    BinOp::Le => f64::from(u8::from(l <= r)),
+                    BinOp::Ge => f64::from(u8::from(l >= r)),
+                    BinOp::Eq => f64::from(u8::from(l == r)),
+                    BinOp::Ne => f64::from(u8::from(l != r)),
+                    BinOp::And => f64::from(u8::from(truthy(l) && truthy(r))),
+                    BinOp::Or => f64::from(u8::from(truthy(l) || truthy(r))),
                 }
             }
             Expr::Call(f, args) => {
