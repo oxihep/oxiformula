@@ -1,19 +1,21 @@
-//! Tokenizer for ROOT `TFormula` expressions.
+//! Tokenizer for ROOT `TFormula` expressions. Every token keeps the byte range
+//! of the source it came from, so errors can point at it.
+
+use std::ops::Range;
 
 use crate::ParseError;
 
 /// A lexical token.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Token {
+pub(crate) enum Tok {
     /// A numeric literal (`1.5`, `2e-3`, `.5`).
     Num(f64),
-    /// An identifier: a variable (`x`/`y`/`z`), constant (`pi`/`e`), or function
-    /// name (`sin`, `TMath::Sqrt`). Kept verbatim (case-sensitive match later).
+    /// An identifier, `::` included: a variable, a constant, a shortcut
+    /// (`gaus`, `pol2`) or a function (`sin`, `TMath::Gaus`).
     Ident(String),
-    /// A positional parameter `[0]`, `[1]`, …
-    Par(usize),
-    /// A named parameter `[mean]` — resolved to an index by first appearance.
-    ParName(String),
+    /// The trimmed contents of `[…]`: a parameter (`0`, `p1`, `mean`), the
+    /// index of `x[1]`, or a shortcut's variables (`gaus[x,y]`).
+    Bracket(String),
     Plus,
     Minus,
     Star,
@@ -31,161 +33,143 @@ pub(crate) enum Token {
     Ne,
     And,
     Or,
+    Not,
     Question,
     Colon,
 }
 
-/// Turn `src` into a token stream, or a [`ParseError`] on an illegal character.
+#[derive(Debug, Clone)]
+pub(crate) struct Token {
+    pub(crate) tok: Tok,
+    pub(crate) span: Range<usize>,
+}
+
+/// Turn `src` into a token stream, or a [`ParseError`] on a character that
+/// cannot start a token.
 pub(crate) fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
     let bytes = src.as_bytes();
     let mut i = 0;
     let mut out = Vec::new();
+    let next = |i: usize| bytes.get(i + 1).copied();
     while i < bytes.len() {
-        let c = bytes[i];
-        match c {
-            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
-            b'+' => {
-                out.push(Token::Plus);
+        let start = i;
+        let (tok, len) = match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' => {
                 i += 1;
+                continue;
             }
-            b'-' => {
-                out.push(Token::Minus);
-                i += 1;
+            b'+' => (Tok::Plus, 1),
+            b'-' => (Tok::Minus, 1),
+            b'*' if next(i) == Some(b'*') => (Tok::Caret, 2),
+            b'*' => (Tok::Star, 1),
+            b'/' => (Tok::Slash, 1),
+            b'^' => (Tok::Caret, 1),
+            b'(' => (Tok::LParen, 1),
+            b')' => (Tok::RParen, 1),
+            b',' => (Tok::Comma, 1),
+            b'<' if next(i) == Some(b'=') => (Tok::Le, 2),
+            b'<' => (Tok::Lt, 1),
+            b'>' if next(i) == Some(b'=') => (Tok::Ge, 2),
+            b'>' => (Tok::Gt, 1),
+            b'=' if next(i) == Some(b'=') => (Tok::EqEq, 2),
+            b'!' if next(i) == Some(b'=') => (Tok::Ne, 2),
+            b'!' => (Tok::Not, 1),
+            b'&' if next(i) == Some(b'&') => (Tok::And, 2),
+            b'|' if next(i) == Some(b'|') => (Tok::Or, 2),
+            b'?' => (Tok::Question, 1),
+            b':' if next(i) == Some(b':') => {
+                return Err(ParseError::new("`::` must follow a name", i..i + 2)
+                    .with_hint("write a namespaced function as `TMath::Gaus(…)`"));
             }
-            b'*' => {
-                if bytes.get(i + 1) == Some(&b'*') {
-                    out.push(Token::Caret); // `**` is power, like `^`
-                    i += 2;
-                } else {
-                    out.push(Token::Star);
-                    i += 1;
-                }
-            }
-            b'/' => {
-                out.push(Token::Slash);
-                i += 1;
-            }
-            b'^' => {
-                out.push(Token::Caret);
-                i += 1;
-            }
-            b'(' => {
-                out.push(Token::LParen);
-                i += 1;
-            }
-            b')' => {
-                out.push(Token::RParen);
-                i += 1;
-            }
-            b',' => {
-                out.push(Token::Comma);
-                i += 1;
-            }
-            b'<' => {
-                if bytes.get(i + 1) == Some(&b'=') {
-                    out.push(Token::Le);
-                    i += 2;
-                } else {
-                    out.push(Token::Lt);
-                    i += 1;
-                }
-            }
-            b'>' => {
-                if bytes.get(i + 1) == Some(&b'=') {
-                    out.push(Token::Ge);
-                    i += 2;
-                } else {
-                    out.push(Token::Gt);
-                    i += 1;
-                }
-            }
-            b'=' if bytes.get(i + 1) == Some(&b'=') => {
-                out.push(Token::EqEq);
-                i += 2;
-            }
-            b'!' if bytes.get(i + 1) == Some(&b'=') => {
-                out.push(Token::Ne);
-                i += 2;
-            }
-            b'&' if bytes.get(i + 1) == Some(&b'&') => {
-                out.push(Token::And);
-                i += 2;
-            }
-            b'|' if bytes.get(i + 1) == Some(&b'|') => {
-                out.push(Token::Or);
-                i += 2;
-            }
-            b'?' => {
-                out.push(Token::Question);
-                i += 1;
-            }
-            b':' if bytes.get(i + 1) == Some(&b':') => {
-                // `::` inside `TMath::Sin` — glue it onto the current identifier
-                // if one is being built; otherwise it is illegal.
-                return Err(ParseError::new("unexpected `::`", i));
-            }
-            b':' => {
-                out.push(Token::Colon);
-                i += 1;
-            }
+            b':' => (Tok::Colon, 1),
             b'[' => {
-                let start = i + 1;
-                let end = src[start..]
+                let close = src[i + 1..]
                     .find(']')
-                    .map(|p| start + p)
-                    .ok_or_else(|| ParseError::new("unclosed `[` in parameter", i))?;
-                let inner = src[start..end].trim();
+                    .ok_or_else(|| ParseError::new("`[` is never closed", i..i + 1))?;
+                let inner = src[i + 1..i + 1 + close].trim();
                 if inner.is_empty() {
-                    return Err(ParseError::new("empty parameter `[]`", i));
+                    return Err(ParseError::new("empty brackets `[]`", i..i + close + 2)
+                        .with_hint("a parameter is `[0]`, `[1]`, … or a name such as `[mean]`"));
                 }
-                if let Ok(n) = inner.parse::<usize>() {
-                    out.push(Token::Par(n));
-                } else {
-                    out.push(Token::ParName(inner.to_string()));
-                }
-                i = end + 1;
+                (Tok::Bracket(inner.to_owned()), close + 2)
             }
-            b'0'..=b'9' | b'.' => {
-                let start = i;
-                let mut seen_dot = false;
-                let mut seen_exp = false;
-                while i < bytes.len() {
-                    match bytes[i] {
-                        b'0'..=b'9' => i += 1,
-                        b'.' if !seen_dot && !seen_exp => {
-                            seen_dot = true;
-                            i += 1;
-                        }
-                        b'e' | b'E' if !seen_exp => {
-                            seen_exp = true;
-                            i += 1;
-                            if matches!(bytes.get(i), Some(b'+' | b'-')) {
-                                i += 1;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-                let text = &src[start..i];
-                let val = text
-                    .parse::<f64>()
-                    .map_err(|_| ParseError::new("invalid number", start))?;
-                out.push(Token::Num(val));
-            }
+            b'0'..=b'9' | b'.' => number(src, i)?,
             b'A'..=b'Z' | b'a'..=b'z' | b'_' => {
-                let start = i;
-                while i < bytes.len() {
-                    match bytes[i] {
-                        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' => i += 1,
-                        // Absorb `::` so `TMath::Sin` is one identifier.
-                        b':' if bytes.get(i + 1) == Some(&b':') => i += 2,
+                let mut j = i;
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' => j += 1,
+                        // `TMath::Sin` is one name.
+                        b':' if bytes.get(j + 1) == Some(&b':')
+                            && bytes
+                                .get(j + 2)
+                                .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_') =>
+                        {
+                            j += 2;
+                        }
                         _ => break,
                     }
                 }
-                out.push(Token::Ident(src[start..i].to_string()));
+                (Tok::Ident(src[i..j].to_owned()), j - i)
             }
-            _ => return Err(ParseError::new("illegal character", i)),
-        }
+            _ => return Err(illegal(src, i)),
+        };
+        out.push(Token {
+            tok,
+            span: start..start + len,
+        });
+        i = start + len;
     }
     Ok(out)
+}
+
+/// A numeric literal starting at `start`: digits, one `.`, and an exponent.
+fn number(src: &str, start: usize) -> Result<(Tok, usize), ParseError> {
+    let bytes = src.as_bytes();
+    let mut i = start;
+    let (mut dot, mut exp) = (false, false);
+    while i < bytes.len() {
+        match bytes[i] {
+            b'0'..=b'9' => i += 1,
+            b'.' if !dot && !exp => {
+                dot = true;
+                i += 1;
+            }
+            b'e' | b'E' if !exp => {
+                exp = true;
+                i += 1;
+                if matches!(bytes.get(i), Some(b'+' | b'-')) {
+                    i += 1;
+                }
+            }
+            _ => break,
+        }
+    }
+    let text = &src[start..i];
+    let value = text
+        .parse::<f64>()
+        .map_err(|_| ParseError::new(format!("`{text}` is not a number"), start..i))?;
+    if !value.is_finite() {
+        return Err(
+            ParseError::new(format!("`{text}` is too large for a double"), start..i)
+                .with_hint("write infinity as `TMath::Infinity()`"),
+        );
+    }
+    Ok((Tok::Num(value), i - start))
+}
+
+/// The error for a character that starts no token, with a hint for the
+/// spellings other languages use.
+fn illegal(src: &str, i: usize) -> ParseError {
+    let c = src[i..].chars().next().unwrap_or('?');
+    let span = i..i + c.len_utf8();
+    let e = ParseError::new(format!("unexpected character `{c}`"), span);
+    match c {
+        '&' => e.with_hint("ROOT writes logical AND as `&&`"),
+        '|' => e.with_hint("ROOT writes logical OR as `||`"),
+        '~' => e.with_hint("ROOT writes logical NOT as `!`"),
+        '=' => e.with_hint("compare with `==`"),
+        '%' => e.with_hint("TFormula compiles to C++, where `%` takes integers: use `fmod(a, b)`"),
+        _ => e,
+    }
 }
