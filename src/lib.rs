@@ -7,7 +7,7 @@
 //! stored in a file ROOT reads.
 //!
 //! ```
-//! use oxifit_formula::Formula;
+//! use oxiformula::Formula;
 //! // Parameters are [0], [1], … or names; variables are x, y, z and t.
 //! let f = Formula::parse("[0]*sin([1]*x) + [2]")?;
 //! assert_eq!((f.npar(), f.ndim()), (3, 1));
@@ -21,7 +21,7 @@
 //! // Written back in ROOT's spelling, whatever was typed.
 //! let h = Formula::parse("[0]*ln(x) + sign(x)")?;
 //! assert_eq!(h.to_root(), "[p0]*log(x)+TMath::Sign(1.,x)");
-//! # Ok::<(), oxifit_formula::ParseError>(())
+//! # Ok::<(), oxiformula::ParseError>(())
 //! ```
 //!
 //! # What a formula can hold
@@ -105,7 +105,7 @@ impl Formula {
     /// ROOT's spelling as a hint.
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let e = Formula::parse_root("ln(x)").unwrap_err();
     /// assert_eq!(e.hint(), Some("use `log`"));
     /// ```
@@ -158,14 +158,14 @@ impl Formula {
     /// densities).
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let f = Formula::parse("[0]*exp(-0.5*((x-[1])/[2])^2)")?;
     /// let d = f.derivative(1).unwrap(); // ∂/∂mean
     /// let (x, p) = (1.3, [2.0, 1.0, 0.5]);
     /// let u: f64 = (x - p[1]) / p[2];
     /// let exact = p[0] * (-0.5 * u * u).exp() * u / p[2];
     /// assert!((d.eval1(x, &p) - exact).abs() < 1e-12);
-    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// # Ok::<(), oxiformula::ParseError>(())
     /// ```
     #[must_use]
     pub fn derivative(&self, k: usize) -> Option<Formula> {
@@ -180,11 +180,11 @@ impl Formula {
     /// symbolically; `None` as for [`derivative`](Self::derivative).
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let f = Formula::parse("[0]*x^3 + sin(x)")?;
     /// let d = f.variable_derivative(0).unwrap();
     /// assert!((d.eval1(2.0, &[1.5]) - (1.5 * 12.0 + 2f64.cos())).abs() < 1e-12);
-    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// # Ok::<(), oxiformula::ParseError>(())
     /// ```
     #[must_use]
     pub fn variable_derivative(&self, v: usize) -> Option<Formula> {
@@ -326,11 +326,11 @@ impl Formula {
     /// stores as `TFormula::fFormula`, with the names beside it.
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let f = Formula::parse("[N]*exp(-0.5*((x-[mu])/[sigma])^2)")?;
     /// assert_eq!(f.param_names(), ["N", "mu", "sigma"]);
     /// assert_eq!(f.to_root(), "[p0]*exp(-0.5*pow((x-[p1])/[p2],2.))");
-    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// # Ok::<(), oxiformula::ParseError>(())
     /// ```
     #[must_use]
     pub fn to_root(&self) -> String {
@@ -360,13 +360,13 @@ impl Formula {
     /// names are numbered in ROOT's order.
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let f = Formula::parse("crystalball")?;
     /// assert_eq!(
     ///     f.to_root_named(),
     ///     "[Constant]*ROOT::Math::crystalball_function(x,[Alpha],[N],[Sigma],[Mean])"
     /// );
-    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// # Ok::<(), oxiformula::ParseError>(())
     /// ```
     #[must_use]
     pub fn to_root_named(&self) -> String {
@@ -377,10 +377,10 @@ impl Formula {
     /// parameters, `\mathrm{Mean}` for named ones.
     ///
     /// ```
-    /// # use oxifit_formula::Formula;
+    /// # use oxiformula::Formula;
     /// let f = Formula::parse("[0]*exp(-x/[tau])")?;
     /// assert_eq!(f.to_latex(), r"p_{0} \cdot e^{\frac{-x}{\mathrm{tau}}}");
-    /// # Ok::<(), oxifit_formula::ParseError>(())
+    /// # Ok::<(), oxiformula::ParseError>(())
     /// ```
     #[must_use]
     pub fn to_latex(&self) -> String {

@@ -11,14 +11,14 @@ type Node = Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync>;
 /// [`Formula::compile`](crate::Formula::compile).
 ///
 /// ```
-/// # use oxifit_formula::Formula;
+/// # use oxiformula::Formula;
 /// let f = Formula::parse("gaus")?.compile();
 /// let p = [2.0, 0.0, 1.0];
 /// assert_eq!(f.eval(&[0.0], &p), 2.0);
 /// let mut out = [0.0; 3];
 /// f.eval_many(&[-1.0, 0.0, 1.0], &p, &mut out);
 /// assert_eq!(out[1], 2.0);
-/// # Ok::<(), oxifit_formula::ParseError>(())
+/// # Ok::<(), oxiformula::ParseError>(())
 /// ```
 pub struct Compiled {
     /// The formula, with each repeated subexpression read from a slot.

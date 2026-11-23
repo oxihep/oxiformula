@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly: two minutes of fuzzing the parser, and the formulas against the
+  # latest ROOT. Never gates a PR.
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  # The toolchain every stable job uses. Pinned so a new Rust release (new
+  # lints under -D warnings) cannot break main on its own; bump it in a PR.
+  RUST_STABLE: "1.100"
+
+jobs:
+  test:
+    name: test / lint / fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+  features:
+    name: feature combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: No features, and each feature alone
+        run: cargo hack check --each-feature --no-dev-deps
+
+  msrv:
+    name: minimum Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the declared rust-version
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --all-targets --all-features
+
+  docs:
+    name: API docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the docs, denying broken links
+        run: cargo doc --no-deps --all-features
+
+  supply-chain:
+    name: supply chain (cargo-deny)
+    # RustSec advisories, yanked crates, and dependency sources (crates.io,
+    # plus git only from github.com/oxihep). Configured in deny.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans sources
+
+  fuzz:
+    name: fuzz target builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Build fuzz targets
+        working-directory: fuzz
+        run: cargo +nightly fuzz build
+
+      - name: Fuzz each target for 2 minutes (weekly)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: fuzz
+        run: |
+          set -euo pipefail
+          for target in $(cargo +nightly fuzz list); do
+            cargo +nightly fuzz run "$target" -- -max_total_time=120 -rss_limit_mb=2048
+          done
+
+      - name: Keep any crash input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+
+  root-golden:
+    name: formulas against ROOT
+    # tests/root_golden.rs checks the formula engine against ROOT's answers,
+    # committed in tests/data/root_formulas.tsv. Here they are made again by
+    # the ROOT of the image (pinned on PRs, the latest weekly), and the test
+    # runs against them: ROOT must accept every formula, compile everything
+    # `to_root` writes, and agree on every value (to 1e-10; libm differs by a
+    # few ulps between platforms, so the table is not compared byte for byte).
+    runs-on: ubuntu-latest
+    container: rootproject/root:${{ github.event_name == 'schedule' && 'latest' || '6.38.00-ubuntu25.10' }}
+    # As in oxiroot's interop job: root's own HOME for rustup, and an empty
+    # docker config to keep the runner's `docker exec` quiet.
+    env:
+      HOME: /root
+      DOCKER_CONFIG: /tmp
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${{ env.RUST_STABLE }}
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Write the macro's input (each formula and its to_root)
+        run: cargo test --test root_golden -- --ignored write_inputs
+
+      - name: ROOT's answers, from this ROOT
+        working-directory: tests/data
+        run: |
+          root -l -b -q root_formulas.C
+          if grep -q 'INVALID' root_formulas.tsv; then
+            grep 'INVALID' root_formulas.tsv
+            echo "ROOT rejects a formula above, or what to_root writes for it"
+            exit 1
+          fi
+
+      - name: The engine agrees with them
+        run: cargo test --test root_golden

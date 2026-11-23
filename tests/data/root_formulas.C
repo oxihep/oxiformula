@@ -1,14 +1,14 @@
 // ROOT's answers for the formulas of root_formulas.txt, for the test in
 // ../root_golden.rs. Input: root_formulas.in.tsv (`formula <TAB> to_root <TAB>
-// oldest ROOT`, as oxifit-formula writes it); output: root_formulas.tsv, where
+// oldest ROOT`, as oxiformula writes it); output: root_formulas.tsv, where
 // a formula this ROOT is too old for is marked TOO_OLD. To regenerate, from
 // the repository root:
 //
-//   cargo test -p oxifit-formula --test root_golden -- --ignored write_inputs
-//   cd crates/oxifit-formula/tests/data && root -l -b -q root_formulas.C
+//   cargo test --test root_golden -- --ignored write_inputs
+//   cd tests/data && root -l -b -q root_formulas.C
 //
 // Each formula is evaluated at x, y, z, t = 1.3, 0.7, 0.2, 0.9 with parameters
-// 1, 1.5, 2, 2.5, … by index; then the formula oxifit-formula writes for it
+// 1, 1.5, 2, 2.5, … by index; then the formula oxiformula writes for it
 // (to_root) is compiled by ROOT and evaluated the same way.
 void root_formulas() {
    gErrorIgnoreLevel = kFatal;

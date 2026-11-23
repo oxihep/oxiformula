@@ -1,7 +1,7 @@
 //! Symbolic derivatives against central differences, for every function the
 //! parser knows (and the operators, conditions and steps).
 
-use oxifit_formula::Formula;
+use oxiformula::Formula;
 
 #[test]
 fn derivatives_match_finite_differences() {

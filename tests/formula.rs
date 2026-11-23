@@ -1,7 +1,7 @@
 //! The formula API: parameters as ROOT numbers them, errors, strict parsing,
 //! rendering, introspection and limits.
 
-use oxifit_formula::{Formula, Function};
+use oxiformula::{Formula, Function};
 
 fn parse(s: &str) -> Formula {
     Formula::parse(s).unwrap_or_else(|e| panic!("{s}: {e}"))

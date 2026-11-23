@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use oxifit_formula::Formula;
+use oxiformula::Formula;
 
 const VARS: [f64; 4] = [1.3, 0.7, 0.2, 0.9];
 

@@ -1,0 +1,23 @@
+[package]
+name = "oxiformula-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oxiformula = { path = ".." }
+
+[[bin]]
+name = "formula"
+path = "fuzz_targets/formula.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone workspace so the main `cargo build --workspace` ignores it (the
+# fuzz targets need the nightly toolchain + cargo-fuzz).
+[workspace]

@@ -1,17 +1,30 @@
 [package]
-name = "oxifit-formula"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-repository.workspace = true
-documentation = "https://docs.rs/oxifit-formula"
+name = "oxiformula"
+version = "0.11.0"
+edition = "2024"
+rust-version = "1.100"
+license = "MIT"
+repository = "https://github.com/oxihep/oxiformula"
+documentation = "https://oxihep.github.io/oxiformula/oxiformula/"
+readme = "README.md"
 keywords = ["root", "tformula", "expression", "parser", "hep"]
 categories = ["science", "mathematics", "parser-implementations"]
-description = "A ROOT TFormula expression engine (parse + evaluate arbitrary formulas, numerical integral/derivative) used by oxifit and oxiroot's TF1/TF2/TF3"
+description = "ROOT's TFormula in pure Rust: parse, evaluate, compile and differentiate formulas, and write them back as ROOT compiles them, checked against ROOT"
 
 [dependencies]
-oxistats = { workspace = true }
+# Until oxistats is on crates.io it is a git dependency. `version` is kept so
+# the switch is just dropping `git`/`tag`.
+oxistats = { git = "https://github.com/oxihep/oxistats", tag = "v0.2.1", version = "0.2.1" }
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+# Casts that can lose information: fixed (`From`, `try_from`) or justified
+# where they stand.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+cast_lossless = "warn"
