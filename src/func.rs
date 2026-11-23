@@ -103,6 +103,34 @@ pub enum Function {
     /// `ROOT::Math::ChebyshevN(x, c0, …, cN)`: `Σ cₖ·Tₖ(x)`, for N from 0 to
     /// 10.
     Chebyshev(u8),
+    /// `ROOT::Math::crystalball_pdf(x, alpha, n, sigma, mean = 0)`: the
+    /// crystal ball of unit area (`NaN` for `n ≤ 1`).
+    CrystalBallPdf,
+    /// `ROOT::Math::landau_pdf(x, xi = 1, x0 = 0)`.
+    LandauPdf,
+    /// `ROOT::Math::beta_pdf(x, a, b)`.
+    BetaPdf,
+    /// `ROOT::Math::cauchy_pdf(x, b = 1, x0 = 0)`.
+    CauchyPdf,
+    /// `ROOT::Math::chisquared_pdf(x, r, x0 = 0)`.
+    ChiSquaredPdf,
+    /// `ROOT::Math::exponential_pdf(x, lambda, x0 = 0)`.
+    ExponentialPdf,
+    /// `ROOT::Math::fdistribution_pdf(x, n, m, x0 = 0)`.
+    FDistributionPdf,
+    /// `ROOT::Math::gamma_pdf(x, alpha, theta, x0 = 0)`.
+    GammaPdf,
+    /// `ROOT::Math::lognormal_pdf(x, m, s, x0 = 0)`.
+    LognormalPdf,
+    /// `ROOT::Math::poisson_pdf(n, mu)`, `n` truncated to a whole number as
+    /// C++ does (`NaN` for a negative `n`).
+    PoissonPdf,
+    /// `ROOT::Math::tdistribution_pdf(x, r, x0 = 0)`.
+    TDistributionPdf,
+    /// `ROOT::Math::uniform_pdf(x, a, b, x0 = 0)`.
+    UniformPdf,
+    /// `TMath::Poisson(x, mu)`: the Poisson density continued to real `x`.
+    Poisson,
 }
 
 use Function::*;
@@ -226,6 +254,19 @@ pub(crate) const NAMES: &[(&str, Function, bool)] = &[
     ("ROOT::Math::gaussian_pdf", NormalPdf, true),
     ("ROOT::Math::crystalball_function", CrystalBall, true),
     ("ROOT::Math::bigaussian_pdf", BiGaussianPdf, true),
+    ("ROOT::Math::crystalball_pdf", CrystalBallPdf, true),
+    ("ROOT::Math::landau_pdf", LandauPdf, true),
+    ("ROOT::Math::beta_pdf", BetaPdf, true),
+    ("ROOT::Math::cauchy_pdf", CauchyPdf, true),
+    ("ROOT::Math::chisquared_pdf", ChiSquaredPdf, true),
+    ("ROOT::Math::exponential_pdf", ExponentialPdf, true),
+    ("ROOT::Math::fdistribution_pdf", FDistributionPdf, true),
+    ("ROOT::Math::gamma_pdf", GammaPdf, true),
+    ("ROOT::Math::lognormal_pdf", LognormalPdf, true),
+    ("ROOT::Math::poisson_pdf", PoissonPdf, true),
+    ("ROOT::Math::tdistribution_pdf", TDistributionPdf, true),
+    ("ROOT::Math::uniform_pdf", UniformPdf, true),
+    ("TMath::Poisson", Poisson, true),
     ("ROOT::Math::Chebyshev0", Chebyshev(0), true),
     ("ROOT::Math::Chebyshev1", Chebyshev(1), true),
     ("ROOT::Math::Chebyshev2", Chebyshev(2), true),
@@ -269,7 +310,12 @@ impl Function {
             Gaus | Landau => (1, 4),
             BreitWigner | NormalPdf => (1, 3),
             BreitWignerPdf => (2, 3),
-            CrystalBall => (5, 5),
+            CrystalBall | CrystalBallPdf => (4, 5),
+            LandauPdf | CauchyPdf => (1, 3),
+            ChiSquaredPdf | ExponentialPdf | TDistributionPdf => (2, 3),
+            BetaPdf => (3, 3),
+            FDistributionPdf | GammaPdf | LognormalPdf | UniformPdf => (3, 4),
+            PoissonPdf | Poisson => (2, 2),
             BiGaussianPdf => (2, 7),
             Chebyshev(n) => (usize::from(n) + 2, usize::from(n) + 2),
             _ => (1, 1),
@@ -344,7 +390,70 @@ impl Function {
                 let z = (x - a(2, 0.0)) / sigma;
                 (-0.5 * z * z).exp() / ((2.0 * std::f64::consts::PI).sqrt() * sigma.abs())
             }
-            CrystalBall => oxistats::crystal_ball(x, a(4, 0.0), a(3, 1.0), a(1, 1.0), a(2, 1.0)),
+            CrystalBall => {
+                crystalball(x, a(1, f64::NAN), a(2, f64::NAN), a(3, f64::NAN), a(4, 0.0))
+            }
+            CrystalBallPdf => {
+                crystalball_pdf(x, a(1, f64::NAN), a(2, f64::NAN), a(3, f64::NAN), a(4, 0.0))
+            }
+            LandauPdf => {
+                let xi = a(1, 1.0);
+                if xi > 0.0 {
+                    oxistats::landau(x, a(2, 0.0), xi)
+                } else {
+                    0.0
+                }
+            }
+            BetaPdf => beta_pdf(x, a(1, f64::NAN), a(2, f64::NAN)),
+            CauchyPdf => {
+                let (b, d) = (a(1, 1.0), x - a(2, 0.0));
+                b / (std::f64::consts::PI * (d * d + b * b))
+            }
+            ChiSquaredPdf => chisquared_pdf(x - a(2, 0.0), a(1, f64::NAN)),
+            ExponentialPdf => {
+                let (lambda, d) = (a(1, f64::NAN), x - a(2, 0.0));
+                if d < 0.0 {
+                    0.0
+                } else {
+                    lambda * (-lambda * d).exp()
+                }
+            }
+            FDistributionPdf => fdistribution_pdf(x - a(3, 0.0), a(1, f64::NAN), a(2, f64::NAN)),
+            GammaPdf => gamma_pdf(x - a(3, 0.0), a(1, f64::NAN), a(2, f64::NAN)),
+            LognormalPdf => {
+                let (m, sd, d) = (a(1, f64::NAN), a(2, f64::NAN), x - a(3, 0.0));
+                if d <= 0.0 {
+                    0.0
+                } else {
+                    let t = (d.ln() - m) / sd;
+                    (-(t * t) / 2.0).exp() / (d * sd.abs() * (2.0 * std::f64::consts::PI).sqrt())
+                }
+            }
+            PoissonPdf => poisson_pdf(x, a(1, f64::NAN)),
+            TDistributionPdf => {
+                let (r, d) = (a(1, f64::NAN), x - a(2, 0.0));
+                (oxistats::gammaln((r + 1.0) / 2.0) - oxistats::gammaln(r / 2.0)).exp()
+                    / (std::f64::consts::PI * r).sqrt()
+                    * (1.0 + d * d / r).powf(-(r + 1.0) / 2.0)
+            }
+            UniformPdf => {
+                let (lo, hi, d) = (a(1, f64::NAN), a(2, f64::NAN), x - a(3, 0.0));
+                if d < hi && d >= lo {
+                    1.0 / (hi - lo)
+                } else {
+                    0.0
+                }
+            }
+            Poisson => {
+                let mu = a(1, f64::NAN);
+                if x < 0.0 {
+                    0.0
+                } else if x == 0.0 {
+                    1.0 / mu.exp()
+                } else {
+                    (x * mu.ln() - mu - oxistats::gammaln(x + 1.0)).exp()
+                }
+            }
             BiGaussianPdf => bigaussian(
                 x,
                 a(1, f64::NAN),
@@ -386,6 +495,112 @@ fn landau(x: f64, mpv: f64, sigma: f64, norm: bool) -> f64 {
     // oxistats' Landau is the unit-area density, already divided by sigma.
     let density = oxistats::landau(x, mpv, sigma);
     if norm { density } else { density * sigma }
+}
+
+/// `ROOT::Math::crystalball_function`: unit peak, a power-law tail below
+/// `mean − |alpha|·sigma` (above it for `alpha < 0`); 0 for `sigma < 0`.
+fn crystalball(x: f64, alpha: f64, n: f64, sigma: f64, mean: f64) -> f64 {
+    if sigma < 0.0 {
+        return 0.0;
+    }
+    oxistats::crystal_ball(x, mean, sigma, alpha, n)
+}
+
+/// `ROOT::Math::crystalball_pdf`: the crystal ball over its area.
+fn crystalball_pdf(x: f64, alpha: f64, n: f64, sigma: f64, mean: f64) -> f64 {
+    if sigma < 0.0 {
+        return 0.0;
+    }
+    if n <= 1.0 {
+        return f64::NAN;
+    }
+    let abs_alpha = alpha.abs();
+    let c = n / abs_alpha / (n - 1.0) * (-alpha * alpha / 2.0).exp();
+    let d = (std::f64::consts::PI / 2.0).sqrt()
+        * (1.0 + oxistats::erf(abs_alpha / std::f64::consts::SQRT_2));
+    crystalball(x, alpha, n, sigma, mean) / (sigma * (c + d))
+}
+
+/// `ROOT::Math::beta_pdf`, with its edge cases at 0 and 1.
+fn beta_pdf(x: f64, a: f64, b: f64) -> f64 {
+    if !(0.0..=1.0).contains(&x) {
+        return 0.0;
+    }
+    let edge = |p: f64, other: f64| {
+        if p < 1.0 {
+            f64::INFINITY
+        } else if p > 1.0 {
+            0.0
+        } else {
+            other
+        }
+    };
+    if x == 0.0 {
+        return edge(a, b);
+    }
+    if x == 1.0 {
+        return edge(b, a);
+    }
+    (oxistats::gammaln(a + b) - oxistats::gammaln(a) - oxistats::gammaln(b)
+        + x.ln() * (a - 1.0)
+        + (-x).ln_1p() * (b - 1.0))
+        .exp()
+}
+
+/// `ROOT::Math::chisquared_pdf` at `d = x − x0`.
+fn chisquared_pdf(d: f64, r: f64) -> f64 {
+    if d < 0.0 {
+        return 0.0;
+    }
+    if d == 0.0 && r / 2.0 - 1.0 == 0.0 {
+        return 0.5;
+    }
+    ((r / 2.0 - 1.0) * (d / 2.0).ln() - d / 2.0 - oxistats::gammaln(r / 2.0)).exp() / 2.0
+}
+
+/// `ROOT::Math::fdistribution_pdf` at `d = x − x0`.
+fn fdistribution_pdf(d: f64, n: f64, m: f64) -> f64 {
+    if n < 0.0 || m < 0.0 {
+        return f64::NAN;
+    }
+    if d < 0.0 {
+        return 0.0;
+    }
+    ((n / 2.0) * n.ln() + (m / 2.0) * m.ln() + oxistats::gammaln((n + m) / 2.0)
+        - oxistats::gammaln(n / 2.0)
+        - oxistats::gammaln(m / 2.0)
+        + (n / 2.0 - 1.0) * d.ln()
+        - ((n + m) / 2.0) * (m + n * d).ln())
+    .exp()
+}
+
+/// `ROOT::Math::gamma_pdf` at `d = x − x0`.
+fn gamma_pdf(d: f64, alpha: f64, theta: f64) -> f64 {
+    if d < 0.0 {
+        0.0
+    } else if d == 0.0 {
+        if alpha == 1.0 { 1.0 / theta } else { 0.0 }
+    } else if alpha == 1.0 {
+        (-d / theta).exp() / theta
+    } else {
+        ((alpha - 1.0) * (d / theta).ln() - d / theta - oxistats::gammaln(alpha)).exp() / theta
+    }
+}
+
+/// `ROOT::Math::poisson_pdf(n, mu)`, `n` truncated as C++ converts a double
+/// to `unsigned int`.
+fn poisson_pdf(x: f64, mu: f64) -> f64 {
+    if x.is_nan() || x < 0.0 {
+        return f64::NAN;
+    }
+    let n = x.trunc();
+    if n > 0.0 && mu >= 0.0 {
+        (n * mu.ln() - oxistats::gammaln(n + 1.0) - mu).exp()
+    } else if mu >= 0.0 {
+        (-mu).exp()
+    } else {
+        f64::NAN
+    }
 }
 
 /// `ROOT::Math::bigaussian_pdf`.

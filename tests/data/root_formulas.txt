@@ -1,3 +1,5 @@
+# One formula per line; a tab and a ROOT version (6.40) marks the oldest ROOT
+# that accepts it.
 gaus
 gausn
 expo
@@ -28,10 +30,10 @@ xygaus
 xyzgaus
 bigaus
 bigaus(1)
-xyexpo
+xyexpo	6.40
 expo(2)
 xylandau
-xylandaun
+xylandaun	6.40
 [0]*x[0]
 x[1]*x[0]+x[2]
 t*x
@@ -127,3 +129,25 @@ ROOT::Math::bigaussian_pdf(x,y,[0],[1],0.3)
 ROOT::Math::Chebyshev4(x,1,2,3,4,5)
 x*y
 [0]*x*y+[1]*z
+crystalballn
+crystalballn(1)
+ROOT::Math::crystalball_function(x,1.2,3,0.8)
+ROOT::Math::crystalball_pdf(x,[0],[1],[2],[3])
+ROOT::Math::landau_pdf(x,[0],[1])
+ROOT::Math::landau_pdf(x)
+ROOT::Math::beta_pdf(x/2,[0],[1])
+ROOT::Math::cauchy_pdf(x,[0],[1])
+ROOT::Math::chisquared_pdf(x,[0])
+ROOT::Math::chisquared_pdf(x,3,0.5)
+ROOT::Math::exponential_pdf(x,[0])
+ROOT::Math::fdistribution_pdf(x,[0],[1])
+ROOT::Math::gamma_pdf(x,[0],[1])
+ROOT::Math::gamma_pdf(x,1,[0],0.2)
+ROOT::Math::lognormal_pdf(x,[0],[1])
+ROOT::Math::poisson_pdf(x,[0])
+ROOT::Math::poisson_pdf(3*x,[0])
+ROOT::Math::tdistribution_pdf(x,[0])
+ROOT::Math::uniform_pdf(x,[0],[1])
+TMath::Poisson(x,[0])
+TMath::Poisson(0,[0])
+erf(x)*erfc(y)

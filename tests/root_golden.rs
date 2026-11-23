@@ -5,6 +5,8 @@
 //! ROOT's answers are `data/root_formulas.tsv`, made by
 //! `data/root_formulas.C` (which says how). Each formula is evaluated at
 //! x, y, z, t = 1.3, 0.7, 0.2, 0.9 with parameters 1, 1.5, 2, … by index.
+//! CI's "formulas against ROOT" job makes the table again with ROOT's own
+//! image and runs this test against it.
 
 use std::path::PathBuf;
 
@@ -22,6 +24,29 @@ fn data(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// The formulas of `data/root_formulas.txt`, each with the oldest ROOT that
+/// accepts it (`6.40` as `64000`, or 0).
+fn formulas() -> Vec<(&'static str, u32)> {
+    let list: &'static str = Box::leak(
+        std::fs::read_to_string(data("root_formulas.txt"))
+            .unwrap()
+            .into_boxed_str(),
+    );
+    list.lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| match l.split_once('\t') {
+            Some((f, v)) => {
+                let (major, minor) = v.trim().split_once('.').unwrap();
+                (
+                    f,
+                    major.parse::<u32>().unwrap() * 10_000 + minor.parse::<u32>().unwrap() * 100,
+                )
+            }
+            None => (l, 0),
+        })
+        .collect()
+}
+
 fn same(a: f64, b: f64) -> bool {
     a == b || (a.is_nan() && b.is_nan()) || (a - b).abs() <= 1e-10 * a.abs().max(1.0)
 }
@@ -30,11 +55,10 @@ fn same(a: f64, b: f64) -> bool {
 #[test]
 #[ignore = "writes the input of data/root_formulas.C"]
 fn write_inputs() {
-    let list = std::fs::read_to_string(data("root_formulas.txt")).unwrap();
     let mut out = String::new();
-    for source in list.lines().filter(|l| !l.is_empty()) {
+    for (source, since) in formulas() {
         let f = Formula::parse_root(source).unwrap_or_else(|e| panic!("{source}: {e}"));
-        out.push_str(&format!("{source}\t{}\n", f.to_root()));
+        out.push_str(&format!("{source}\t{}\t{since}\n", f.to_root()));
     }
     std::fs::write(data("root_formulas.in.tsv"), out).unwrap();
 }
@@ -42,11 +66,15 @@ fn write_inputs() {
 #[test]
 fn formulas_are_roots() {
     let table = std::fs::read_to_string(data("root_formulas.tsv")).unwrap();
-    let list = std::fs::read_to_string(data("root_formulas.txt")).unwrap();
     let mut checked = 0;
     for row in table.lines().filter(|l| !l.starts_with('#')) {
         let cols: Vec<&str> = row.split('\t').collect();
         let source = cols[0];
+        if cols.get(1) == Some(&"TOO_OLD") {
+            // A formula the ROOT that made the table does not take yet.
+            checked += 1;
+            continue;
+        }
         assert!(
             cols.len() == 7,
             "ROOT does not accept {source:?}; take it out of root_formulas.txt"
@@ -94,5 +122,5 @@ fn formulas_are_roots() {
         );
         checked += 1;
     }
-    assert_eq!(checked, list.lines().filter(|l| !l.is_empty()).count());
+    assert_eq!(checked, formulas().len());
 }

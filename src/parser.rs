@@ -688,8 +688,8 @@ enum Shortcut {
     Gaus { norm: bool },
     Expo,
     Landau { norm: bool },
-    CrystalBall,
-    BreitWigner,
+    CrystalBall { norm: bool },
+    BreitWigner { norm: bool },
     BiGaus,
     Cheb(u8),
     Pol(usize),
@@ -706,8 +706,10 @@ impl Shortcut {
                 "expo" => Shortcut::Expo,
                 "landau" => Shortcut::Landau { norm: false },
                 "landaun" => Shortcut::Landau { norm: true },
-                "crystalball" => Shortcut::CrystalBall,
-                "breitwigner" => Shortcut::BreitWigner,
+                "crystalball" => Shortcut::CrystalBall { norm: false },
+                "crystalballn" => Shortcut::CrystalBall { norm: true },
+                "breitwigner" => Shortcut::BreitWigner { norm: false },
+                "breitwignern" => Shortcut::BreitWigner { norm: true },
                 "bigaus" => Shortcut::BiGaus,
                 _ => {
                     let digits = |d: &str| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit());
@@ -783,10 +785,20 @@ impl Shortcut {
             (Shortcut::Landau { norm: true }, 2) => {
                 "TMath::Landau({V0},[0],[1],true)*TMath::Landau({V1},[2],[3],true)".into()
             }
-            (Shortcut::CrystalBall, 1) => {
+            (Shortcut::CrystalBall { norm: false }, 1) => {
                 "[0]*ROOT::Math::crystalball_function({V0},[3],[4],[2],[1])".into()
             }
-            (Shortcut::BreitWigner, 1) => "[0]*ROOT::Math::breitwigner_pdf({V0},[2],[1])".into(),
+            (Shortcut::CrystalBall { norm: true }, 1) => {
+                "[0]*ROOT::Math::crystalball_pdf({V0},[3],[4],[2],[1])".into()
+            }
+            (Shortcut::BreitWigner { norm: false }, 1) => {
+                "[0]*ROOT::Math::breitwigner_pdf({V0},[2],[1])".into()
+            }
+            (Shortcut::BreitWigner { norm: true }, _) => {
+                return Err(
+                    "does not compile in ROOT either; `breitwigner` already has unit area".into(),
+                );
+            }
             (Shortcut::BiGaus, 2) => {
                 "[0]*ROOT::Math::bigaussian_pdf({V0},{V1},[2],[4],[5],[1],[3])".into()
             }
@@ -861,7 +873,7 @@ impl Shortcut {
             (Shortcut::BiGaus, 2) => &["Constant", "MeanX", "SigmaX", "MeanY", "SigmaY", "Rho"],
             (Shortcut::Expo, 1) => &["Constant", "Slope"],
             (Shortcut::Landau { .. }, 1) => &["Constant", "MPV", "Sigma"],
-            (Shortcut::CrystalBall, 1) => &["Constant", "Mean", "Sigma", "Alpha", "N"],
+            (Shortcut::CrystalBall { .. }, 1) => &["Constant", "Mean", "Sigma", "Alpha", "N"],
             _ => return None,
         })
     }

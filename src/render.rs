@@ -414,7 +414,10 @@ fn latex_call(out: &mut String, f: Function, args: &[Expr], params: &[String]) {
         other => {
             let name = other.root_name();
             let bare = name.rsplit("::").next().unwrap_or(&name).to_owned();
-            named(out, &format!(r"\operatorname{{{bare}}}"));
+            named(
+                out,
+                &format!(r"\operatorname{{{}}}", bare.replace('_', r"\_")),
+            );
         }
     }
 }

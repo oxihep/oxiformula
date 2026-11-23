@@ -128,3 +128,25 @@ ROOT::Math::bigaussian_pdf(x,y,[0],[1],0.3)	2	2	p0,p1	0.047624098111237405	ROOT:
 ROOT::Math::Chebyshev4(x,1,2,3,4,5)	1	0		81.936000000000021	ROOT::Math::Chebyshev4(x,1.,2.,3.,4.,5.)	81.936000000000021
 x*y	2	0		0.90999999999999992	x*y	0.90999999999999992
 [0]*x*y+[1]*z	3	2	p0,p1	1.21	[p0]*x*y+[p1]*z	1.21
+crystalballn	1	5	Constant,Mean,Sigma,Alpha,N	0.19762504044328555	[p0]*ROOT::Math::crystalball_pdf(x,[p3],[p4],[p2],[p1])	0.19762504044328555
+crystalballn(1)	1	6	Constant,Mean,Sigma,Alpha,N,p5	0.22999856780522321	[1]*ROOT::Math::crystalball_pdf(x,[4],[5],[3],[2])	0.22999856780522321
+ROOT::Math::crystalball_function(x,1.2,3,0.8)	1	0		0.26705183522634335	ROOT::Math::crystalball_function(x,1.2,3.,0.8)	0.26705183522634335
+ROOT::Math::crystalball_pdf(x,[0],[1],[2],[3])	1	4	p0,p1,p2,p3	0.10630822512856536	ROOT::Math::crystalball_pdf(x,[p0],[p1],[p2],[p3])	0.10630822512856536
+ROOT::Math::landau_pdf(x,[0],[1])	1	2	p0,p1	0.18063532403865756	ROOT::Math::landau_pdf(x,[p0],[p1])	0.18063532403865756
+ROOT::Math::landau_pdf(x)	1	0		0.13251226929158344	ROOT::Math::landau_pdf(x)	0.13251226929158344
+ROOT::Math::beta_pdf(x/2,[0],[1])	1	2	p0,p1	0.88741196746494244	ROOT::Math::beta_pdf(x/2,[p0],[p1])	0.88741196746494244
+ROOT::Math::cauchy_pdf(x,[0],[1])	1	2	p0,p1	0.30606719825364487	ROOT::Math::cauchy_pdf(x,[p0],[p1])	0.30606719825364487
+ROOT::Math::chisquared_pdf(x,[0])	1	1	p0	0.18266148179510913	ROOT::Math::chisquared_pdf(x,[p0])	0.18266148179510913
+ROOT::Math::chisquared_pdf(x,3,0.5)	1	0		0.23918683193456397	ROOT::Math::chisquared_pdf(x,3.,0.5)	0.23918683193456397
+ROOT::Math::exponential_pdf(x,[0])	1	1	p0	0.27253179303401259	ROOT::Math::exponential_pdf(x,[p0])	0.27253179303401259
+ROOT::Math::fdistribution_pdf(x,[0],[1])	1	2	p0,p1	0.13696562412885452	ROOT::Math::fdistribution_pdf(x,[p0],[p1])	0.13696562412885452
+ROOT::Math::gamma_pdf(x,[0],[1])	1	2	p0,p1	0.2802335896724546	ROOT::Math::gamma_pdf(x,[p0],[p1])	0.2802335896724546
+ROOT::Math::gamma_pdf(x,1,[0],0.2)	1	1	p0	0.33287108369807955	ROOT::Math::gamma_pdf(x,1.,[p0],0.2)	0.33287108369807955
+ROOT::Math::lognormal_pdf(x,[0],[1])	1	2	p0,p1	0.18128580561779115	ROOT::Math::lognormal_pdf(x,[p0],[p1])	0.18128580561779115
+ROOT::Math::poisson_pdf(x,[0])	1	1	p0	0.36787944117144233	ROOT::Math::poisson_pdf(x,[p0])	0.36787944117144233
+ROOT::Math::poisson_pdf(3*x,[0])	1	1	p0	0.061313240195240391	ROOT::Math::poisson_pdf(3*x,[p0])	0.061313240195240391
+ROOT::Math::tdistribution_pdf(x,[0])	1	1	p0	0.11833081270772888	ROOT::Math::tdistribution_pdf(x,[p0])	0.11833081270772888
+ROOT::Math::uniform_pdf(x,[0],[1])	1	2	p0,p1	2	ROOT::Math::uniform_pdf(x,[p0],[p1])	2
+TMath::Poisson(x,[0])	1	1	p0	0.31531300874911344	TMath::Poisson(x,[p0])	0.31531300874911344
+TMath::Poisson(0,[0])	0	1	p0	0.36787944117144233	TMath::Poisson(0.,[p0])	0.36787944117144233
+erf(x)*erfc(y)	2	0		0.30093624480624437	erf(x)*erfc(y)	0.30093624480624437

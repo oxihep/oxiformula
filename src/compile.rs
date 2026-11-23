@@ -21,10 +21,23 @@ type Node = Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync>;
 /// # Ok::<(), oxifit_formula::ParseError>(())
 /// ```
 pub struct Compiled {
+    /// The formula, with each repeated subexpression read from a slot.
     node: Node,
+    /// The repeated subexpressions, in the order they are computed: each into
+    /// variable slot `SLOT_BASE + k`, before `node`.
+    slots: Vec<(usize, Node)>,
     ndim: usize,
     npar: usize,
 }
+
+/// Where the slots of repeated subexpressions start among the variables:
+/// after `x`, `y`, `z` and `t`.
+const SLOT_BASE: usize = 4;
+/// The most repeated subexpressions computed once.
+const MAX_SLOTS: usize = 8;
+/// Above this many nodes, a formula is compiled as it is (finding repeats
+/// costs the square of its size).
+const MAX_CSE_NODES: usize = 400;
 
 impl std::fmt::Debug for Compiled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -37,11 +50,30 @@ impl std::fmt::Debug for Compiled {
 
 impl Compiled {
     pub(crate) fn new(expr: &Expr, ndim: usize, npar: usize) -> Compiled {
+        let (root, defs, order) = hoist(expr);
         Compiled {
-            node: compile(expr),
+            node: compile(&root),
+            slots: order
+                .into_iter()
+                .map(|k| (SLOT_BASE + k, compile(&defs[k])))
+                .collect(),
             ndim,
             npar,
         }
+    }
+
+    #[inline]
+    fn run(&self, vars: &[f64], params: &[f64]) -> f64 {
+        if self.slots.is_empty() {
+            return (self.node)(vars, params);
+        }
+        let mut buf = [0.0; SLOT_BASE + MAX_SLOTS];
+        let n = vars.len().min(SLOT_BASE);
+        buf[..n].copy_from_slice(&vars[..n]);
+        for (at, slot) in &self.slots {
+            buf[*at] = slot(&buf, params);
+        }
+        (self.node)(&buf, params)
     }
 
     /// Evaluate at `vars` (`x`, or `x, y`, …) with `params`, as
@@ -53,7 +85,7 @@ impl Compiled {
         if vars.len() < self.ndim || params.len() < self.npar {
             return f64::NAN;
         }
-        (self.node)(vars, params)
+        self.run(vars, params)
     }
 
     /// Evaluate a one-variable formula at each of `xs`, into `out` (as many
@@ -63,7 +95,7 @@ impl Compiled {
         let ok = self.ndim == 1 && params.len() >= self.npar;
         for (o, x) in out.iter_mut().zip(xs) {
             *o = if ok {
-                (self.node)(std::slice::from_ref(x), params)
+                self.run(std::slice::from_ref(x), params)
             } else {
                 f64::NAN
             };
@@ -80,6 +112,129 @@ impl Compiled {
     #[must_use]
     pub fn npar(&self) -> usize {
         self.npar
+    }
+}
+
+/// Common subexpressions: `expr` with each repeated subtree of four or more
+/// nodes replaced by a variable slot (`SLOT_BASE + k`), the subtrees by `k`,
+/// and an order to compute them in (each after the slots it reads). The
+/// largest repeat is taken first; at most `MAX_SLOTS`.
+fn hoist(expr: &Expr) -> (Expr, Vec<Expr>, Vec<usize>) {
+    let mut root = expr.clone();
+    let mut defs: Vec<Expr> = Vec::new();
+    if size(expr) > MAX_CSE_NODES {
+        return (root, defs, Vec::new());
+    }
+    while defs.len() < MAX_SLOTS {
+        let mut seen: Vec<(Expr, usize)> = Vec::new();
+        count(&root, &mut seen);
+        for d in &defs {
+            count_children(d, &mut seen);
+        }
+        let Some(best) = seen
+            .into_iter()
+            .filter(|(e, n)| *n >= 2 && size(e) >= 4)
+            .max_by_key(|(e, _)| size(e))
+            .map(|(e, _)| e)
+        else {
+            break;
+        };
+        let slot = Expr::Var(SLOT_BASE + defs.len());
+        replace(&mut root, &best, &slot);
+        for d in &mut defs {
+            replace_children(d, &best, &slot);
+        }
+        defs.push(best);
+    }
+    // Each slot after the slots it reads.
+    let mut order = Vec::with_capacity(defs.len());
+    let mut done = vec![false; defs.len()];
+    fn visit(k: usize, defs: &[Expr], done: &mut [bool], order: &mut Vec<usize>) {
+        if done[k] {
+            return;
+        }
+        done[k] = true;
+        defs[k].walk(&mut |e| {
+            if let Expr::Var(v) = e
+                && *v >= SLOT_BASE
+                && *v - SLOT_BASE != k
+            {
+                visit(*v - SLOT_BASE, defs, done, order);
+            }
+        });
+        order.push(k);
+    }
+    for k in 0..defs.len() {
+        visit(k, &defs, &mut done, &mut order);
+    }
+    (root, defs, order)
+}
+
+fn size(e: &Expr) -> usize {
+    let mut n = 0;
+    e.walk(&mut |_| n += 1);
+    n
+}
+
+fn is_leaf(e: &Expr) -> bool {
+    matches!(
+        e,
+        Expr::Num(_) | Expr::Const(_) | Expr::Var(_) | Expr::Param(_)
+    )
+}
+
+/// Count every subtree of `e` that is not a leaf.
+fn count(e: &Expr, seen: &mut Vec<(Expr, usize)>) {
+    if is_leaf(e) {
+        return;
+    }
+    match seen.iter_mut().find(|(s, _)| s == e) {
+        Some((_, n)) => *n += 1,
+        None => seen.push((e.clone(), 1)),
+    }
+    count_children(e, seen);
+}
+
+fn count_children(e: &Expr, seen: &mut Vec<(Expr, usize)>) {
+    match e {
+        Expr::Neg(a) | Expr::Not(a) => count(a, seen),
+        Expr::Binary(_, a, b) => {
+            count(a, seen);
+            count(b, seen);
+        }
+        Expr::Call(_, args) => args.iter().for_each(|a| count(a, seen)),
+        Expr::Cond(c, t, f) => {
+            count(c, seen);
+            count(t, seen);
+            count(f, seen);
+        }
+        _ => {}
+    }
+}
+
+/// Replace every occurrence of `what` in `e` by `with`.
+fn replace(e: &mut Expr, what: &Expr, with: &Expr) {
+    if e == what {
+        *e = with.clone();
+    } else {
+        replace_children(e, what, with);
+    }
+}
+
+fn replace_children(e: &mut Expr, what: &Expr, with: &Expr) {
+    match e {
+        Expr::Neg(a) | Expr::Not(a) => replace(a, what, with),
+        Expr::Binary(_, a, b) => {
+            replace(a, what, with);
+            replace(b, what, with);
+        }
+        Expr::Call(_, args) => args.iter_mut().for_each(|a| replace(a, what, with)),
+        Expr::Cond(c, t, f) => {
+            replace(c, what, with);
+            replace(t, what, with);
+            replace(f, what, with);
+        }
+        _ => {}
     }
 }
 
@@ -237,4 +392,36 @@ fn call(f: Function, args: &[Expr]) -> Node {
         }
         f.eval(&buf[..nodes.len().min(MAX_ARGS)])
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Formula;
+
+    #[test]
+    fn repeated_subexpressions_are_computed_once() {
+        // ROOT's `gaus` is `[0]*exp(-0.5*u*u)` with `u = (x-[1])/[2]` twice.
+        let g = Formula::parse("gaus").unwrap();
+        let (_, defs, order) = hoist(g.expr());
+        assert_eq!((defs.len(), order), (1, vec![0]));
+        // A repeat inside a larger repeat: the inner slot comes first.
+        let f = Formula::parse("exp(sin([0]*x+1)*2) + exp(sin([0]*x+1)*2) + sin([0]*x+1)").unwrap();
+        let (_, defs, order) = hoist(f.expr());
+        assert_eq!(defs.len(), 2);
+        assert_eq!(order, vec![1, 0]);
+        let c = f.compile();
+        for x in [-1.3, 0.0, 0.4, 2.5] {
+            assert_eq!(
+                c.eval(&[x], &[0.7]).to_bits(),
+                f.eval(&[x], &[0.7]).to_bits()
+            );
+        }
+        // A leaf, or one operation on two leaves, is cheaper to recompute.
+        assert!(
+            hoist(Formula::parse("x*[0]+x*[0]").unwrap().expr())
+                .1
+                .is_empty()
+        );
+    }
 }

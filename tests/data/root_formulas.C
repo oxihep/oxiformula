@@ -1,6 +1,7 @@
 // ROOT's answers for the formulas of root_formulas.txt, for the test in
-// ../root_golden.rs. Input: root_formulas.in.tsv (`formula <TAB> to_root`, as
-// oxifit-formula writes it); output: root_formulas.tsv. To regenerate, from
+// ../root_golden.rs. Input: root_formulas.in.tsv (`formula <TAB> to_root <TAB>
+// oldest ROOT`, as oxifit-formula writes it); output: root_formulas.tsv, where
+// a formula this ROOT is too old for is marked TOO_OLD. To regenerate, from
 // the repository root:
 //
 //   cargo test -p oxifit-formula --test root_golden -- --ignored write_inputs
@@ -21,8 +22,10 @@ void root_formulas() {
       return f.EvalPar(x, nullptr);
    };
    while (std::getline(in, line)) {
-      auto tab = line.find('\t');
-      std::string src = line.substr(0, tab), root = line.substr(tab + 1);
+      auto tab = line.find('\t'), tab2 = line.find('\t', tab + 1);
+      std::string src = line.substr(0, tab), root = line.substr(tab + 1, tab2 - tab - 1);
+      int since = std::stoi(line.substr(tab2 + 1));
+      if (gROOT->GetVersionInt() < since) { out << src << "\tTOO_OLD\n"; continue; }
       TFormula f("f", src.c_str());
       if (!f.IsValid()) { out << src << "\tINVALID\n"; continue; }
       std::string names;
